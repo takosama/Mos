@@ -1,20 +1,64 @@
+using Rin;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Rin;
+using System.Runtime.Intrinsics;
+using System.Runtime.InteropServices;
+using   System.Runtime.Intrinsics.X86;
+using System.Runtime.CompilerServices;
+using Rin.rMos;
+
 namespace atcoder
 {
-
     internal class Program
     {
         public static void Main(string[] args)
         {
-            g();
+            abc242p.g();
+        }
+    }
+
+
+    class abc242p
+    {
+        unsafe class MyMos : IMosFunctions<int, int>
+        {
+            MyArray<byte> array;
+            byte* _ptr;
+            public MyMos(int size)
+            {
+                array = new MyArray<byte>(size + 1);
+                _ptr = array.ptr;
+            }
+            public int ComputeFoldL_L(Span<int> arr, int result)
+            {
+                for (int i = 0; i < arr.Length; i++)
+                    result += (++_ptr[arr[i]] & 0x1) ^ 0x1;
+                return result;
+            }
+            public int ComputeFoldL_R(Span<int> arr, int result)
+            {
+                for (int i = arr.Length - 1; i >= 0; i--)
+                    result -= (++_ptr[arr[i]] & 0x1);
+                return result;
+            }
+            public int ComputeFoldR_L(Span<int> arr, int result)
+            {
+                for (int i = arr.Length - 1; i >= 0; i--)
+                    result -= (++_ptr[arr[i]] & 0x1);
+                return result;
+            }
+            public int ComputeFoldR_R(Span<int> arr, int result)
+            {
+                for (int i = 0; i < arr.Length; i++)
+                    result += (++_ptr[arr[i]] & 0x1) ^ 0x1;
+                return result;
+            }
         }
 
-        public static void g()
+        unsafe public static void g()
         {
             var _ = int.Parse(Console.ReadLine());
 
@@ -30,30 +74,15 @@ namespace atcoder
                 querys[i].id = i;
             }
 
-            int[] CountArray = new int[color.Length + 1];
-            Mos<int, int> mos = new Mos<int, int>(color, querys);
-            Func<int, int, int> fp = (input, result) =>
-            {
-                CountArray[input]++;
-                if (Math.Abs(CountArray[input] % 2) == 0)
-                    return result + 1;
-                else
-                    return result;
-            };
-            Func<int, int, int> fm = (input, result) =>
-            {
-                CountArray[input]--;
-                if (Math.Abs(CountArray[input] % 2) == 1)
-                    return result - 1;
-                else
-                    return result;
-            };
+            MyMos function = new MyMos(color.Length);
 
-            var result = mos.Run(fm, fp, fp, fm);
+            var array = new MyArray<byte>(color.Length + 1);
+            var _ptr = array.ptr;
+
+            Mos<int, int> mos = new Mos<int, int>(color, querys, function);
+
+            var result = mos.RunFold();
             Console.WriteLine(string.Join("\n", result));
         }
-
     }
-
 }
-   
