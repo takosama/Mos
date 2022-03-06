@@ -20,6 +20,42 @@ namespace atcoder
         }
     }
 
+    
+    public unsafe class MyArray<T>: IDisposable
+        where T : unmanaged
+    {
+        private bool disposedValue;
+        int lng = 0;
+       public T* ptr ;
+        IntPtr iptr;
+        public MyArray(int size)
+        {
+            lng = size;
+            iptr = Marshal.AllocCoTaskMem(size * sizeof(T));
+            ptr = (T*)iptr.ToPointer();
+            for(int i=0;i<lng;i++)
+                ptr[i] = default(T); 
+        }
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                    Marshal.FreeCoTaskMem(iptr);
+                disposedValue = true;
+            }
+        }
+        ~MyArray()
+        {
+            Dispose(disposing: false);
+        }
+        void IDisposable.Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+    }
+
 
     class abc242p
     {
