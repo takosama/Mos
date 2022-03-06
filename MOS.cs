@@ -1,27 +1,35 @@
+using Rin;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Runtime.Intrinsics;
+using System.Runtime.InteropServices;
+using   System.Runtime.Intrinsics.X86;
+using System.Runtime.CompilerServices;
+using Rin.rMos;
 
-namespace Rin
+
+
+namespace Rin.rMos
 {
-    public static class ObjectExtension
+    interface IMosFunctions<T, U>
     {
-        public static T DeepClone<T>(this T src)
-        {
-            using (var memoryStream = new System.IO.MemoryStream())
-            {
-                var binaryFormatter
-                  = new System.Runtime.Serialization
-                        .Formatters.Binary.BinaryFormatter();
-                binaryFormatter.Serialize(memoryStream, src); // シリアライズ
-                memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
-                return (T)binaryFormatter.Deserialize(memoryStream); // デシリアライズ
-            }
-        }
+        public U ComputeFoldL_L(Span<T> arr, U result);
+        public U ComputeFoldL_R(Span<T> arr, U result);
+        public U ComputeFoldR_L(Span<T> arr, U result);
+        public U ComputeFoldR_R(Span<T> arr, U result);
     }
 
-    class Mos<T, U>
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="T">arr</typeparam>
+    /// <typeparam name="U">result</typeparam>
+    unsafe class Mos<T, U>
+        where T : unmanaged
+        where U : unmanaged
     {
         T[] _arr;
         int _r;
@@ -30,11 +38,8 @@ namespace Rin
         bool IsFirst = true;
         List<(int id, int l, int r)>[] _mosquerys;
         int _QuerysLength = 0;
-        Func<T, U, U> _L_MoveL;
-        Func<T, U, U> _L_MoveR;
-        Func<T, U, U> _R_MoveL;
-        Func<T, U, U> _R_MoveR;
-        public Mos(T[] arr, (int id, int l, int r)[] querys)
+        IMosFunctions<T, U> Function;
+        public Mos(T[] arr, (int id, int l, int r)[] querys, IMosFunctions<T, U> functions)
         {
             this._arr = arr;
 
@@ -54,95 +59,58 @@ namespace Rin
                     _mosquerys[i] = _mosquerys[i].OrderBy(x => x.r).ToList();
                 else
                     _mosquerys[i] = _mosquerys[i].OrderByDescending(x => x.r).ToList();
+
+            Function = functions;
         }
 
-        /// <summary>
-        /// in (T input,U result) 
-        /// out U
-        /// </summary>
-        /// <param name="L_MoveL"></param>
-        /// <param name="L_MoveR"></param>
-        /// <param name="R_MoveL"></param>
-        /// <param name="R_MoveR"></param>
-        /// <returns></returns>
-        public U[] Run(Func<T, U, U> L_MoveL, Func<T, U, U> L_MoveR, Func<T, U, U> R_MoveL, Func<T, U, U> R_MoveR)
+        public U[] RunFold()
         {
-            _L_MoveL = L_MoveL;
-            _L_MoveR = L_MoveR;
-            _R_MoveL = R_MoveL;
-            _R_MoveR = R_MoveR;
             var rtn = new U[_QuerysLength];
+            var span = this._arr.AsSpan();
             foreach (var qs in _mosquerys)
                 foreach (var q in qs)
                 {
-                    SetLR(q.l, q.r);
+                    SetLRFold(q.l, q.r, span);
                     rtn[q.id] = this.result;
                 }
             return rtn;
         }
 
-        /// <summary>
-        /// in T input,U result 
-        /// out U
-        /// </summary>
-        /// <param name="L_MoveL"></param>
-        /// <param name="L_MoveR"></param>
-        /// <param name="R_MoveL"></param>
-        /// <param name="R_MoveR"></param>
-        /// <returns></returns>
-        public U[] Run_ResultDeepClone(Func<T, U, U> L_MoveL, Func<T, U, U> L_MoveR, Func<T, U, U> R_MoveL, Func<T, U, U> R_MoveR)
-        {
-            _L_MoveL = L_MoveL;
-            _L_MoveR = L_MoveR;
-            _R_MoveL = R_MoveL;
-            _R_MoveR = R_MoveR;
-            var rtn = new U[_QuerysLength];
-            foreach (var qs in _mosquerys)
-                foreach (var q in qs)
-                {
-                    SetLR(q.l, q.r);
-                    rtn[q.id] = this.result.DeepClone();
-                }
-            return rtn;
-        }
-
-        void SetLR(int l, int r)
+        void SetLRFold(int l, int r, Span<T> arr)
         {
             if (IsFirst)
             {
                 _l = l;
                 _r = l - 1;
-                SetRBit(r);
+                SetRBitFold(r, arr);
                 _r = r;
                 IsFirst = false;
             }
             else
             {
-                SetRBit(r);
-                SetLBit(l);
+                SetRBitFold(r, arr);
+                SetLBitFold(l, arr);
 
                 _l = l;
                 _r = r;
             }
         }
 
-        void SetLBit(int l)
+
+        void SetLBitFold(int l, Span<T> arr)
         {
             if (l > _l)
-                for (int i = _l; i < l; i++)
-                    result = _L_MoveL(_arr[i], result);
-            else if (l < _l)
-                for (int i = _l - 1; i >= l; i--)
-                    result = _L_MoveR(_arr[i], result);
+                result = Function.ComputeFoldL_R(arr.Slice(_l, l - _l), result);
+            else
+                result = Function.ComputeFoldL_L(arr.Slice(l, _l - l), result);
         }
-        void SetRBit(int r)
+        void SetRBitFold(int r, Span<T> arr)
         {
             if (r > _r)
-                for (int i = _r + 1; i <= r; i++)
-                    result = _R_MoveL(_arr[i], result);
-            else if (r < _r)
-                for (int i = _r; i > r; i--)
-                    result = _R_MoveR(_arr[i], result);
+                result = Function.ComputeFoldR_R(arr.Slice(_r + 1, r - _r), result);
+            else
+                result = Function.ComputeFoldR_L(arr.Slice(r + 1, _r - r), result);
         }
+
     }
 }
